@@ -32,6 +32,7 @@ function asc(opts) {
         return;
       }
       id = await this.resolveId(matches[1], importee);
+      this.addWatchFile(id);
       return MARKER + id;
     },
     async load(id) {
