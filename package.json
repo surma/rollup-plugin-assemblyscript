@@ -1,0 +1,25 @@
+{
+  "name": "rollup-plugin-assemblyscript",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "keywords": [],
+  "author": "Surma <surma@surma.dev>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "assemblyscript": "^0.9.2"
+  },
+  "devDependencies": {
+    "husky": "^4.2.3",
+    "lint-staged": "^10.0.8",
+    "prettier": "^1.19.1"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{js,css,md}": "prettier --write"
+  }
+}
