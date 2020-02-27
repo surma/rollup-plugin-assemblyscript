@@ -26,6 +26,7 @@ function asc(opts) {
   opts = { ...defaultOpts, ...opts };
 
   return {
+    name: "assemblyscript",
     async resolveId(id, importee) {
       const matches = opts.matcher.exec(id);
       if (!matches) {
@@ -43,10 +44,14 @@ function asc(opts) {
       const fileName = basename(id, ".as");
       const ascCode = await fsp.readFile(id, "utf8");
       await asCompiler.ready;
-      const { binary } = asCompiler.compileString(
+      const { stderr, binary } = asCompiler.compileString(
         ascCode,
         opts.compilerOptions
       );
+      if (!binary) {
+        this.error(stderr.toString());
+        return;
+      }
       const assetReferenceId = this.emitAsset(
         `${fileName}.wasm`,
         Buffer.from(binary.buffer)
