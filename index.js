@@ -27,12 +27,12 @@ function asc(opts) {
 
   return {
     name: "assemblyscript",
-    async resolveId(id, importee) {
-      const matches = opts.matcher.exec(id);
+    async resolveId(prefixedId, importee) {
+      const matches = opts.matcher.exec(prefixedId);
       if (!matches) {
         return;
       }
-      id = await this.resolveId(matches[1], importee);
+      const {id} = await this.resolve(matches[1], importee);
       this.addWatchFile(id);
       return MARKER + id;
     },
@@ -41,7 +41,7 @@ function asc(opts) {
         return;
       }
       id = id.slice(MARKER.length);
-      const fileName = basename(id, ".as");
+      const fileName = basename(id).replace(/\.[^.]+$/, "");
       const ascCode = await fsp.readFile(id, "utf8");
       await asCompiler.ready;
       const { stderr, binary } = asCompiler.compileString(
@@ -52,11 +52,19 @@ function asc(opts) {
         this.error(stderr.toString());
         return;
       }
-      const assetReferenceId = this.emitAsset(
-        `${fileName}.wasm`,
-        Buffer.from(binary.buffer)
-      );
-      return `export default import.meta.ROLLUP_ASSET_URL_${assetReferenceId}`;
+      const referenceId = this.emitFile({
+        type: "asset",
+        name: `${fileName}.wasm`,
+        source: Buffer.from(binary.buffer)
+      });
+      return `
+
+        const wasmUrl = import.meta.ROLLUP_FILE_URL_${referenceId}
+        const modulePromise = /*@__PURE__*/(() => WebAssembly.compileStreaming(fetch(wasmUrl)))();
+        const instancePromise = /*@__PURE__*/(() => modulePromise.then(module => WebAssembly.instantiate(module, {})))();
+        export default wasmUrl;
+        export {wasmUrl, modulePromise, instancePromise};
+      `;
     }
   };
 }
