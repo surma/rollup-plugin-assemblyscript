@@ -22,21 +22,39 @@ const defaultOpts = {
   compilerOptions: {}
 };
 
+// This special import contains the `compileStreaming` polyfill.
+const SPECIAL_IMPORT = "__rollup-plugin-assemblyscript_compileStreaming";
+
 function asc(opts) {
   opts = { ...defaultOpts, ...opts };
 
   return {
     name: "assemblyscript",
-    async resolveId(prefixedId, importee) {
-      const matches = opts.matcher.exec(prefixedId);
+    async resolveId(rawId, importee) {
+      if (rawId === SPECIAL_IMPORT) {
+        return SPECIAL_IMPORT;
+      }
+      const matches = opts.matcher.exec(rawId);
       if (!matches) {
         return;
       }
-      const {id} = await this.resolve(matches[1], importee);
+      const { id } = await this.resolve(matches[1], importee);
       this.addWatchFile(id);
       return MARKER + id;
     },
     async load(id) {
+      if (id === SPECIAL_IMPORT) {
+        return `
+          export async function compileStreaming(respP) {
+            if('compileStreaming' in WebAssembly) {
+              return WebAssembly.compileStreaming(respP);
+            }
+            return respP
+              .then(resp => resp.arrayBuffer())
+              .then(buffer => WebAssembly.compile(buffer));
+          }
+        `;
+      }
       if (!id.startsWith(MARKER)) {
         return;
       }
@@ -58,9 +76,9 @@ function asc(opts) {
         source: Buffer.from(binary.buffer)
       });
       return `
-
+        import {compileStreaming} from "${SPECIAL_IMPORT}";
         const wasmUrl = import.meta.ROLLUP_FILE_URL_${referenceId}
-        const modulePromise = /*@__PURE__*/(() => WebAssembly.compileStreaming(fetch(wasmUrl)))();
+        const modulePromise = /*@__PURE__*/(() => compileStreaming(fetch(wasmUrl)))();
         const instancePromise = /*@__PURE__*/(() => modulePromise.then(module => WebAssembly.instantiate(module, {})))();
         export default wasmUrl;
         export {wasmUrl, modulePromise, instancePromise};
