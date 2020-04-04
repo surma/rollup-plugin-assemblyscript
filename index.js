@@ -12,8 +12,8 @@
  */
 
 const asCompiler = require("assemblyscript/cli/asc");
-const { promises: fsp } = require("fs");
 const { basename } = require("path");
+const { Transform } = require("stream");
 
 const MARKER = "asc:";
 const PREFIX_MATCHER = /^asc:(.+)$/;
@@ -24,6 +24,22 @@ const defaultOpts = {
 
 // This special import contains the `compileStreaming` polyfill.
 const SPECIAL_IMPORT = "__rollup-plugin-assemblyscript_compileStreaming";
+
+function streamCollector() {
+  const stream = new Transform({
+    transform(chunk, _enc, cb) {
+      this.push(chunk);
+      cb();
+    }
+  });
+  let chunks = [];
+  const result = new Promise((resolve, reject) => {
+    stream.on("data", chunk => chunks.push(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+  });
+  return { stream, result };
+}
 
 function asc(opts) {
   opts = { ...defaultOpts, ...opts };
@@ -60,20 +76,40 @@ function asc(opts) {
       }
       id = id.slice(MARKER.length);
       const fileName = basename(id).replace(/\.[^.]+$/, "");
-      const ascCode = await fsp.readFile(id, "utf8");
       await asCompiler.ready;
-      const { stderr, binary } = asCompiler.compileString(
-        ascCode,
-        opts.compilerOptions
-      );
-      if (!binary) {
-        this.error(stderr.toString());
-        return;
-      }
+      const binary = await new Promise(async (resolve, reject) => {
+        const errorCollector = streamCollector();
+        const outputCollector = streamCollector();
+        const params = [
+          id,
+          "-b",
+          ...Object.entries(opts.compilerOptions).map(([opt, val]) => {
+            if (typeof val === "boolean") {
+              return `--${opt}`;
+            }
+            return `--${opt}=${val}`;
+          })
+        ];
+        asCompiler.main(
+          params,
+          {
+            stdout: outputCollector.stream,
+            stderr: errorCollector.stream
+          },
+          async err => {
+            if (err) {
+              errorCollector.stream.end();
+              reject(await errorCollector.result);
+            }
+          }
+        );
+        outputCollector.stream.end();
+        resolve(await outputCollector.result);
+      });
       const referenceId = this.emitFile({
         type: "asset",
         name: `${fileName}.wasm`,
-        source: Buffer.from(binary.buffer)
+        source: binary
       });
       return `
         import {compileStreaming} from "${SPECIAL_IMPORT}";
