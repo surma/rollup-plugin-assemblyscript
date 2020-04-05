@@ -99,7 +99,9 @@ function asc(opts) {
           async err => {
             if (err) {
               errorCollector.stream.end();
-              reject(await errorCollector.result);
+              const stderr = await errorCollector.result;
+              const msg = new TextDecoder().decode(stderr);
+              reject(msg);
             }
           }
         );
