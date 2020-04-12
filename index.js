@@ -12,15 +12,35 @@
  */
 
 const asCompiler = require("assemblyscript/cli/asc");
-const { basename } = require("path");
+const { basename, join, relative } = require("path");
 const { Transform } = require("stream");
+const { tmpdir } = require("os");
+const { promises: fsp } = require("fs");
 
 const MARKER = "asc:";
 const PREFIX_MATCHER = /^asc:(.+)$/;
 const defaultOpts = {
   matcher: PREFIX_MATCHER,
+  sourceMapFolder: `asc-sourcemaps`,
+  sourceMapURLPattern: null,
   compilerOptions: {}
 };
+
+// Modified version of from rollup/rollup/src/utils/renderNamePatter.ts:
+function renderNamePattern(pattern, replacements) {
+  return pattern.replace(/\[(\w+)\]/g, (_match, type) => {
+    if (!replacements.hasOwnProperty(type)) {
+      throw Error(
+        `"[${type}]" is not a valid placeholder in "${pattern}" pattern.`
+      );
+    }
+    let v = replacements[type];
+    if (typeof v === "function") {
+      v = v();
+    }
+    return v;
+  });
+}
 
 // This special import contains the `compileStreaming` polyfill.
 const SPECIAL_IMPORT = "__rollup-plugin-assemblyscript_compileStreaming";
@@ -39,6 +59,10 @@ function streamCollector() {
     stream.on("end", () => resolve(Buffer.concat(chunks)));
   });
   return { stream, result };
+}
+
+function shouldGenerateSourceMaps(opts) {
+  return opts.sourceMapURLPattern;
 }
 
 function asc(opts) {
@@ -76,13 +100,25 @@ function asc(opts) {
       }
       id = id.slice(MARKER.length);
       const fileName = basename(id).replace(/\.[^.]+$/, "");
+      const wasmFileName = `${fileName}.wasm`;
+      const folder = tmpdir();
+      const wasmFilePath = join(folder, wasmFileName);
+      const sourceMapFileName = wasmFileName + ".map";
+      const sourceMapFilePath = join(folder, sourceMapFileName);
       await asCompiler.ready;
-      const binary = await new Promise(async (resolve, reject) => {
+      await new Promise(async (resolve, reject) => {
         const errorCollector = streamCollector();
-        const outputCollector = streamCollector();
         const params = [
           id,
           "-b",
+          relative(process.env.PWD, wasmFilePath),
+          ...(shouldGenerateSourceMaps(opts)
+            ? [
+                `--sourceMap=${renderNamePattern(opts.sourceMapURLPattern, {
+                  name: sourceMapFileName
+                })}`
+              ]
+            : []),
           ...Object.entries(opts.compilerOptions).map(([opt, val]) => {
             if (typeof val === "boolean") {
               return `--${opt}`;
@@ -92,27 +128,31 @@ function asc(opts) {
         ];
         asCompiler.main(
           params,
-          {
-            stdout: outputCollector.stream,
-            stderr: errorCollector.stream
-          },
+          { stderr: errorCollector.stream },
           async err => {
             if (err) {
               errorCollector.stream.end();
               const stderr = await errorCollector.result;
               const msg = new TextDecoder().decode(stderr);
-              reject(msg);
+              return reject(msg);
             }
+            resolve();
           }
         );
-        outputCollector.stream.end();
-        resolve(await outputCollector.result);
       });
       const referenceId = this.emitFile({
         type: "asset",
         name: `${fileName}.wasm`,
-        source: binary
+        source: await fsp.readFile(wasmFilePath)
       });
+      if (shouldGenerateSourceMaps(opts)) {
+        this.emitFile({
+          type: "asset",
+          fileName: join(opts.sourceMapFolder, sourceMapFileName),
+          source: await fsp.readFile(sourceMapFilePath)
+        });
+      }
+
       return `
         import {compileStreaming} from "${SPECIAL_IMPORT}";
         const wasmUrl = import.meta.ROLLUP_FILE_URL_${referenceId}

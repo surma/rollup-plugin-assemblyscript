@@ -7,7 +7,7 @@
   "author": "Surma <surma@surma.dev>",
   "license": "Apache-2.0",
   "dependencies": {
-    "assemblyscript": "^0.9.2"
+    "assemblyscript": "^0.9.4"
   },
   "devDependencies": {
     "husky": "^4.2.3",

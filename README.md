@@ -70,6 +70,8 @@ Internally, the module passes `{}` to `instantiate` as the `importsObject` and w
 
 - `compilerOptions`: Options bag that is passed straight to the [AssemblyScript compiler library].
 - `matcher`: A RegExp that is used to decided what imports to handle. The default is `PREFIX_MATCHER`, which will match all imports that start with `asc:`.
+- `sourceMapURLPattern`: A pattern rendering the full, absolute URL a source map. If not set (default), no source maps will be generated. `[name]` will be replace with the file name of the source map file. The URL needs to be absolute as relative source map URLs do not seem to be supported in browsers.
+- `sourceMapFolder`: The folder inside the output directory into which source maps will be put. Default: `asc-sourcemaps`
 
 ---
 
