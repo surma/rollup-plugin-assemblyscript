@@ -9,6 +9,7 @@ export default {
   },
   plugins: [
     asc({
+      fileExtension: ".as",
       compilerOptions: {
         optimizeLevel: 3,
         runtime: "none"
