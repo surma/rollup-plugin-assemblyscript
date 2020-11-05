@@ -6,7 +6,7 @@
   "keywords": [],
   "author": "Surma <surma@surma.dev>",
   "license": "Apache-2.0",
-  "dependencies": {
+  "peerDependencies": {
     "assemblyscript": "^0.9.4"
   },
   "devDependencies": {
