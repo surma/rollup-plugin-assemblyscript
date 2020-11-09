@@ -6,8 +6,8 @@
   "keywords": [],
   "author": "Surma <surma@surma.dev>",
   "license": "Apache-2.0",
-  "dependencies": {
-    "assemblyscript": "^0.17.1"
+  "peerDependencies": {
+    "assemblyscript": "*"
   },
   "devDependencies": {
     "husky": "^4.2.3",
