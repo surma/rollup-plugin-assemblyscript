@@ -124,7 +124,8 @@ function asc(opts) {
               return `--${opt}`;
             }
             return `--${opt}=${val}`;
-          })
+          }),
+          ...(opts.fileExtension ? [`--extension`, opts.fileExtension] : [])
         ];
         asCompiler.main(
           params,

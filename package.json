@@ -1,6 +1,6 @@
 {
   "name": "rollup-plugin-assemblyscript",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "",
   "main": "index.js",
   "keywords": [],
@@ -12,7 +12,12 @@
   "devDependencies": {
     "husky": "^4.2.3",
     "lint-staged": "^10.0.8",
-    "prettier": "^1.19.1"
+    "prettier": "^1.19.1",
+    "rollup": "^2.32.1"
+  },
+  "scripts": {
+    "test": "cd test && rollup -c",
+    "test-serve": "npx servez test"
   },
   "husky": {
     "hooks": {
