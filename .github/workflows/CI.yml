@@ -1,0 +1,55 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  Build:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+        node_version:
+          - 12
+          - 14
+          - 15
+        node_arch:
+          - x64
+    steps:
+      # Prepare
+      - uses: actions/checkout@v2
+      - name: Cache node_modules
+        uses: actions/cache@v2
+        env:
+          cache-name: node_modules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ matrix.node_version }}-${{ matrix.node_arch }}-${{ hashFiles('package.json') }}
+      - name: Install Node
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ matrix.node_version }}
+          architecture: ${{ matrix.node_arch }}
+
+      # Install and Test
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install assemblyscript
+
+      - name: Run the tests
+        run: npm run test
+
+  Skip:
+    if: contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip CI 🚫
+        run: echo skip ci
