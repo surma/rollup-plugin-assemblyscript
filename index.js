@@ -111,7 +111,7 @@ function asc(opts) {
         const params = [
           id,
           "-b",
-          relative(process.env.PWD, wasmFilePath),
+          wasmFilePath,
           ...(shouldGenerateSourceMaps(opts)
             ? [
                 `--sourceMap=${renderNamePattern(opts.sourceMapURLPattern, {
