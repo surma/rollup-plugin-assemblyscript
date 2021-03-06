@@ -12,58 +12,20 @@
  */
 
 const asCompiler = require("assemblyscript/cli/asc");
-const { basename, join, relative } = require("path");
-const { Transform } = require("stream");
+const { basename, join } = require("path");
 const { tmpdir } = require("os");
-const { promises: fsp } = require("fs");
+const fsp = require("fs/promises");
 
 const MARKER = "asc:";
 const PREFIX_MATCHER = /^asc:(.+)$/;
 const defaultOpts = {
   matcher: PREFIX_MATCHER,
-  sourceMapFolder: `asc-sourcemaps`,
-  sourceMapURLPattern: null,
-  compilerOptions: {}
+  compilerOptions: {},
+  useAsBind: false
 };
-
-// Modified version of from rollup/rollup/src/utils/renderNamePatter.ts:
-function renderNamePattern(pattern, replacements) {
-  return pattern.replace(/\[(\w+)\]/g, (_match, type) => {
-    if (!replacements.hasOwnProperty(type)) {
-      throw Error(
-        `"[${type}]" is not a valid placeholder in "${pattern}" pattern.`
-      );
-    }
-    let v = replacements[type];
-    if (typeof v === "function") {
-      v = v();
-    }
-    return v;
-  });
-}
 
 // This special import contains the `compileStreaming` polyfill.
 const SPECIAL_IMPORT = "__rollup-plugin-assemblyscript_compileStreaming";
-
-function streamCollector() {
-  const stream = new Transform({
-    transform(chunk, _enc, cb) {
-      this.push(chunk);
-      cb();
-    }
-  });
-  let chunks = [];
-  const result = new Promise((resolve, reject) => {
-    stream.on("data", chunk => chunks.push(chunk));
-    stream.on("error", reject);
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
-  });
-  return { stream, result };
-}
-
-function shouldGenerateSourceMaps(opts) {
-  return opts.sourceMapURLPattern;
-}
 
 function asc(opts) {
   opts = { ...defaultOpts, ...opts };
@@ -103,64 +65,53 @@ function asc(opts) {
       const wasmFileName = `${fileName}.wasm`;
       const folder = tmpdir();
       const wasmFilePath = join(folder, wasmFileName);
-      const sourceMapFileName = wasmFileName + ".map";
-      const sourceMapFilePath = join(folder, sourceMapFileName);
       await asCompiler.ready;
       await new Promise(async (resolve, reject) => {
-        const errorCollector = streamCollector();
         const params = [
+          opts.useAsBind
+            ? [
+                require.resolve("as-bind/lib/assembly/as-bind.ts"),
+                "--exportRuntime"
+              ]
+            : [],
           id,
           "-b",
-          relative(process.env.PWD, wasmFilePath),
-          ...(shouldGenerateSourceMaps(opts)
-            ? [
-                `--sourceMap=${renderNamePattern(opts.sourceMapURLPattern, {
-                  name: sourceMapFileName
-                })}`
-              ]
-            : []),
+          wasmFilePath,
           ...Object.entries(opts.compilerOptions).map(([opt, val]) => {
-            if (typeof val === "boolean") {
+            if (val === true) {
               return `--${opt}`;
             }
             return `--${opt}=${val}`;
           }),
-          ...(opts.fileExtension ? [`--extension`, opts.fileExtension] : [])
-        ];
-        asCompiler.main(
-          params,
-          { stderr: errorCollector.stream },
-          async err => {
-            if (err) {
-              errorCollector.stream.end();
-              const stderr = await errorCollector.result;
-              const msg = new TextDecoder().decode(stderr);
-              return reject(msg);
-            }
-            resolve();
+          opts.fileExtension ? [`--extension`, opts.fileExtension] : []
+        ].flat();
+        asCompiler.main(params, async err => {
+          if (err) {
+            return reject(`${err}`);
           }
-        );
+          resolve();
+        });
       });
+      const source = await fsp.readFile(wasmFilePath);
       const referenceId = this.emitFile({
         type: "asset",
         name: `${fileName}.wasm`,
-        source: await fsp.readFile(wasmFilePath)
+        source
       });
-      if (shouldGenerateSourceMaps(opts)) {
+      if (opts.compilerOptions.sourceMap) {
+        const sourceMapFileName = wasmFileName + ".map";
+        const sourceMapFilePath = join(folder, sourceMapFileName);
         this.emitFile({
           type: "asset",
-          fileName: join(opts.sourceMapFolder, sourceMapFileName),
+          fileName: `assets/${sourceMapFileName}`,
           source: await fsp.readFile(sourceMapFilePath)
         });
       }
 
       return `
         import {compileStreaming} from "${SPECIAL_IMPORT}";
-        const wasmUrl = import.meta.ROLLUP_FILE_URL_${referenceId}
-        const modulePromise = /*@__PURE__*/(() => compileStreaming(fetch(wasmUrl)))();
-        const instancePromise = /*@__PURE__*/(() => modulePromise.then(module => WebAssembly.instantiate(module, {})))();
+        export const wasmUrl = import.meta.ROLLUP_FILE_URL_${referenceId};
         export default wasmUrl;
-        export {wasmUrl, modulePromise, instancePromise};
       `;
     }
   };
